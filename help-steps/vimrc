@@ -1,0 +1,78 @@
+hi StatusLine ctermfg=DarkGreen ctermbg=DarkGreen gui=none guifg=#FFFFFF guibg=none
+hi TabLineFill ctermfg=DarkGreen ctermbg=DarkGreen gui=none guifg=#00AA00 guibg=#00AA00
+hi TabLine ctermfg=Black ctermbg=DarkGreen gui=none guifg=#000000 guibg=#00AA00
+hi TabLineSel ctermfg=White ctermbg=DarkGreen gui=bold guifg=#FFFFFF guibg=#1C1917
+set showtabline=2
+set autochdir
+
+function! s:tail_update()
+    edit
+    normal G
+endfunction
+
+function! TailTick(timer_id)
+    if exists('b:tail_timer_id') && b:tail_timer_id == a:timer_id
+        if getfsize(bufname('%')) != b:tail_file_size
+            let b:tail_file_size = getfsize(bufname('%'))
+            call s:tail_update()
+        endif
+    endif
+endfunction
+
+function! TailStart()
+    let b:tail_file_size = getfsize(bufname('%'))
+    let b:tail_timer_id = timer_start(70, 'TailTick', {'repeat': -1})
+    call s:tail_update()
+endfunction
+
+function! TailStop()
+    if exists('b:tail_timer_id')
+        call timer_stop(b:tail_timer_id)
+        unlet b:tail_timer_id
+        unlet b:tail_file_size
+    endif
+endfunction
+
+set tabline=%!MyTabLine()
+
+function! MyTabLine()
+    let s = ''
+    for i in range(tabpagenr('$'))
+        if i + 1 == tabpagenr()
+            let s .= '%#TabLineSel#'
+        else
+            let s .= '%#TabLine#'
+        endif
+
+        let s .= '%' . (i + 1) . 'T'
+        
+        let s .= ' %{MyTabLabel(' . (i + 1) . ')} '
+    endfor
+
+    let s .= '%#TabLineFill#%T'
+
+    if tabpagenr('$') > 1
+        let s .= '%=%#TabLine#%999Xclose'
+    endif
+
+    return s
+endfunction
+
+function! MyTabLabel(n)
+
+    let l:tabname = gettabvar(a:n, 'name', '')
+
+    if l:tabname != ''
+        return l:tabname
+    endif
+
+    let buflist = tabpagebuflist(a:n)
+    let winnr = tabpagewinnr(a:n)
+    let l:bname = bufname(buflist[winnr - 1])
+
+    if l:bname == ''
+        let l:bname = '[No Name]'
+    endif
+
+    return l:bname
+endfunction

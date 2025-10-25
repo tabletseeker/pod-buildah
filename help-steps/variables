@@ -1,0 +1,20 @@
+#!/bin/bash
+
+HOST_USER="$(id -un)"
+IMG_SOURCE="docker.io/debian:bookworm-slim"
+CACHER_DIR="/var/cache/apt-cacher-ng"
+CACHER_NAME="apt-cacher-systemd"
+CACHER_SOURCE="docker.io/debian:bookworm-slim"
+CACHER_IMG="tabletseeker/apt-cacher-ng-systemd"
+TMUX_EXEC="tmux"
+MAX_BUILD_PANE="4"
+MAX_LOG_PANE="12"
+TMUX_EXEC="tmux"
+XP_SOCKET_PATH="/tmp/tmux-1000/default"
+BUILD_SESSION_ID="pod-buildah"
+BUILD_WINDOW_ID="pod-build-win"
+LOG_SESSION_ID="pod-log"
+LOG_WINDOW_ID="pod-log-win"
+SHELL="/usr/bin/env bash"
+LOG_POSTFIX=({install,git,build}.log)
+#CT_POST_ARG="/bin/bash"

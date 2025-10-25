@@ -1,0 +1,51 @@
+#!/bin/bash
+
+buildah_check_image() {
+	if buildah images --quiet -- "${1}" &> /dev/null; then
+		if [ -n "${2}" ]; then
+			engine_signal_container "rm --force"
+			buildah rmi --force "${1}"
+		else
+			return 1
+		fi
+	fi
+}
+
+engine_check_container() {
+	ctr=$("${ENGINE}" ps --all --quiet --filter name="^${1}$")
+	
+	running=$("${ENGINE}" container list --quiet --filter name="^${1}$")
+
+	[ -n "${ctr}" ] && return 0 || return 1
+}
+
+engine_signal_container() {
+	engine_check_container "${EXEC_NAME}" || return 0
+
+	case "${1}" in
+		rm*)
+			exit_code=0
+			;;
+		stop|kill)
+			[ -n "${running}" ] || return 1
+			exit_code=1
+			;;
+		restart)
+			exit_code=1
+			;;
+		"")
+			if [ -z "${running}" ]; then
+				set -- "restart"
+				exit_code=1
+			else
+				return 1
+			fi
+			;;
+	esac
+	
+	echo "INFO - Sending ${1} signal --> container ${EXEC_NAME}"
+	
+	"${ENGINE}" ${1} -- "${ctr}"
+	
+	return "${exit_code}"
+}
