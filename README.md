@@ -43,7 +43,7 @@ A simple shell script that uses buildah to create customized OCI/docker images a
 * While the main container process (in this case a build script) is running in the background, pod-buildah runs a custom command in a separate tmux session. By default this command launches a shell `/bin/bash` inside each container to allow direct access. (container label is also the username)
 
   <img src="https://i.postimg.cc/KjKWsKhB/Screenshot-2025-10-11-18-04-17.png" width="85%" height="85%">
-* However, any command can be chosen, like for example monitoring tools.
+* However, any command can be automatically executed on startup, like for example monitoring tools.
 
   <img src="https://i.postimg.cc/gk2hn9mQ/final6.png" width="85%" height="85%">
 
@@ -172,7 +172,7 @@ A simple shell script that uses buildah to create customized OCI/docker images a
 
     <img src="https://i.postimg.cc/ZKhhLdXs/8b.png" width="85%" height="85%">
 
-* Any other exit code is marked with a grey, blinking bar. When a container's main process exits and the container stops, it will inherently exit all `podman exec` (tmux) commands attached to it with `Code 137`.
+* Any other exit code is marked with a grey, blinking bar. When a container's main process exits and the container stops, it will inherently exit all `podman exec` (tmux) commands attached to it with non-zero exit codes, such as`Code 137`.
   * Container linux_kernel stops because main process finished
 
     <img src="https://i.postimg.cc/TPHSjnw6/42.png" width="85%" height="85%">
@@ -241,7 +241,7 @@ A simple shell script that uses buildah to create customized OCI/docker images a
 | `-w`, `--wipe` |  Empty logs, clear clone and artifacts directory | none
 | `-d`, `--detach` |  do not automatically attach tmux session | none
 | `-u`, `--url`  		| Clone url of desired git repository | https://github.com/atlas-engineer/nyxt
-| `-b`, `--branch`  	| Branch name of desired git repository | master
+| `-b`, `--branch`  	| Branch name(s) of desired git repository | master
 | `-p`, `--packages`  | Build dependencies in single line or column format | "build-essential make cmake"
 | `-c`, `--command ` | Execute a custom command instead of the build script | /bin/bash
 | `-r`, `--rebuild`  	| Remove and rebuild the specified image | main
