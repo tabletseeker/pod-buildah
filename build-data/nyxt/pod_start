@@ -1,0 +1,102 @@
+#!/bin/bash
+
+set -m
+set -x
+set -o errexit
+set -o nounset
+set -o errtrace
+set -o pipefail
+
+source_stage() {
+sudo /bin/bash -c 'cat > /etc/apt/sources.list.d/debian.sources << EOF
+Types: deb deb-src
+URIs: http://deb.debian.org/debian
+Suites: bookworm bookworm-updates
+Components: main non-free-firmware
+Enabled: yes
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb deb-src
+URIs: http://security.debian.org/debian-security
+Suites: bookworm-security
+Components: main non-free-firmware
+Enabled: yes
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+EOF'
+}
+
+package_stage() {
+	if ! dpkg -s ${PACKAGES} &>/dev/null 2>&1; then
+		sudo \
+			--non-interactive \
+			-- \
+				apt-get update
+
+		DEBIAN_FRONTEND=noninteractive \
+			sudo \
+				--non-interactive \
+				-- \
+				apt-get install \
+					--no-install-recommends \
+					--yes \
+						${PACKAGES} </dev/null
+	fi
+}
+
+git_stage() {
+	[ -d ".git" ] || \
+	git clone \
+		--branch "${TAG}" \
+		--recurse-submodules \
+		--depth=1 \
+			"${URL}" \
+			.
+
+	git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" --depth 1
+
+	if [ -n "${TAG_TREE:-}" ]; then
+		git worktree add --checkout ./"${TAG}" "${TAG}" || true
+		cd -- "${CLONE_DIR}/${TAG}"
+	else
+		git switch --detach "${TAG}"
+	fi
+
+	git status
+}
+
+build_stage() {
+	time {
+		make all -j $(getconf _NPROCESSORS_ONLN)
+		make install DESTDIR="${ARTIFACT_DIR}/${TAG_TREE:-}"
+	} &
+}
+
+clean_up() {
+	if [ "$CLEAN" = "true" ]; then
+		rm -rf -- "${CLONE_DIR}/"{*,.*} "${ARTIFACT_DIR}/"{*,.*}
+		find "${LOG_DIR}" -type f -regextype posix-egrep -regex "${LOG_DIR}.*/("${LOG_POSTFIX// /|}")" -exec truncate --size 0 -- {} \;
+	fi
+}
+
+main() {
+	clean_up
+
+	readarray -t -d' ' BRANCH  < <(printf "%s" "${BRANCH}")
+
+	readarray -t -d' ' LOG_POSTFIX  < <(printf "%s" "${LOG_POSTFIX}")
+
+	source_stage
+
+	package_stage &>> "${LOG_DIR}/${LOG_POSTFIX[0]}"
+
+	for TAG in "${BRANCH[@]}"; do
+		[ ${#BRANCH[@]} -lt 2 ] || TAG_TREE="${TAG}"
+		cd -- "${CLONE_DIR}"
+		git_stage &>> "${LOG_DIR}/${TAG_TREE:-}/${LOG_POSTFIX[1]}"
+		build_stage &>> "${LOG_DIR}/${TAG_TREE:-}/${LOG_POSTFIX[2]}"
+	done
+	
+	wait
+}
+
+main

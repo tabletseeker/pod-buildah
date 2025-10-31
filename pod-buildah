@@ -1,0 +1,330 @@
+#!/bin/bash
+
+set -x
+set -o errexit
+set -o nounset
+set -o errtrace
+set -o pipefail
+
+sudo -v
+
+shopt -s extglob
+
+DOCKER_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
+SOURCE_PATH="${DOCKER_DIR}/source"
+DEFAULT_TARGETS="@("$(xargs<"${DOCKER_DIR}/help-steps/targets" | tr " " \|)")"
+VIM="nvim -R -p -n -c 'source ${DOCKER_DIR}/help-steps/vimrc'"
+ENGINE="podman"
+
+source "${DOCKER_DIR}/help-steps/variables"
+source "${DOCKER_DIR}/help-steps/buildah"
+source "${DOCKER_DIR}/help-steps/tmux"
+source "${DOCKER_DIR}/help-steps/init"
+
+print_usage() {
+  cat -- << EOF
+  Usage: $0 [ options ]
+
+  General Options:
+    -e|--engine   				: preferred container engine (docker|podman)
+    -t|--target   				: build target(s) designated in $DEFAULT_TARGETS
+    -w|--wipe    				: clear clone directory and empty logs
+    -d|--detach    				: do not automatically attach tmux session
+    -c|--command  				: custom command or shell compliant command chain
+    -r|--rebuild  				: remove and rebuild the base, main or cache image
+    -s|--signal  				: send a signal to the container (stop|kill|restart|rm)
+  	-u|--url  					: clone url of desired git repository
+    -b|--branch  				: branch name of desired git repository
+    -p|--packages  				: build dependencies in single line or column format
+    -x|--prefix  				: set a custom prefix to change the container naming scheme
+   -sv|--source-volume  		: absolute path of the source volume
+   -cv|--cacher-volume  		: absolute patch of the apt-cacher volume
+   -si|--source-image  			: base image type that buildah uses with 'from' instruction
+   -bl|--branch-log  			: individual LOG_1 files when multiple branches are passed
+   -ln|--log-name				: assign custom naming scheme to a single or all log files
+   -pc|--post-command			: custom command executed inside the container after the main process exits
+   -tc|--tmux-command			: custom command executed inside tmux session after the container process exits
+   -cb|--custom-base			: custom base.sh to setup the container image
+    -h|--help     				: print usage dialog
+EOF
+}
+
+parse_args() {
+	while true; do
+		case "${1:-}" in
+		  -e|--engine)
+		    ENGINE="${2}"
+		    shift 2
+		    ;;
+		  -t|--target)
+				readarray \
+					-d ',' \
+					-t \
+						TARGET < <(printf "%s" "${2}")
+		    shift 2
+		    ;;
+		  -w|--wipe)
+		    CLEAN="true"
+		    shift 1
+		    ;;
+		  -s|--signal)
+				case "${2}" in
+					rm*|stop|kill|pause|restart)
+						SIGNAL="${2}"
+						;;
+				esac
+		    shift 2
+		    ;;
+		  -d|--detach)
+		    DETACH="1"
+		    shift 1
+		    ;;
+		  -c|--command)
+		    COMMAND_ARG="${2}"
+		    COMMAND_PROX="/bin/bash"
+		    shift 2
+		    ;;
+		  -r|--rebuild)
+				case "${2}" in
+					*main*)
+						REBUILD_IMG="1"
+						;;&
+					*cache*)
+						REBUILD_CACHE="1"
+						;;
+				esac
+		    shift 2
+		    ;;
+		  -p|--packages)
+		    PACKAGES_ARG="${2}"
+		    shift 2
+		    ;;
+		  -u|--url)
+		    URL_ARG="${2}"
+		    shift 2
+		    ;;
+		  -b|--branch)
+				readarray \
+					-d ',' \
+					-t \
+						BRANCH < <(printf "%s" "${2}")
+		    shift 2
+		    ;;
+		  -x|--prefix)
+		    PREFIX="${2}"
+		    SEPARATOR="-"
+		    shift 2
+		    ;;
+		  -sv|--source-volume)
+		    SOURCE_PATH="${2}"
+		    shift 2
+		    ;;
+		  -cv|--cacher-volume)
+		    CACHER_VOLUME="${2}"
+		    shift 2
+		    ;;
+		  -si|--source-image)
+		    IMG_SOURCE="${2}"
+		    shift 2
+		    ;;
+		  -h|--help)
+		    print_usage
+		    exit 0
+		    ;;
+		  -bl|--branch-log)
+		    BRANCH_LOG="1"
+		    shift 1
+		    ;;
+		  -ln|--log-name)
+				readarray \
+					-d ',' \
+					-t \
+						CUSTOM_LOG < <(printf "%s" "${2:-}")
+				CUSTOM_NR=${#CUSTOM_LOG[@]}
+				LOG_POSTFIX=("${CUSTOM_LOG[@]}" "${LOG_POSTFIX[@]:$CUSTOM_NR}")
+		    shift 2
+		    ;;
+		  -tc|--tmux-command)
+		    PB_POST_ARG="${2}"
+		    shift 2
+		    ;;
+		  -pc|--post-command)
+		    CT_POST_ARG="${2}"
+		    shift 2
+		    ;;
+		  -cb|--custom-base)
+		    CUSTOM_BASE="${2}"
+		    shift 2
+		    ;;
+		  --)
+		    shift
+		    break
+		    ;;
+		  *)
+		    break
+		    ;;
+		esac
+	done
+}
+
+env_setup() {
+	case "${TARGET_ITEM}" in
+		$DEFAULT_TARGETS)
+			DOCKER_USER="${TARGET_ITEM}"
+			SOURCE_DIR="/home/${DOCKER_USER}"
+			EXEC_NAME="${PREFIX:-}${SEPARATOR:-}${TARGET_ITEM}"
+			SOURCE_VOLUME="${SOURCE_PATH}/${TARGET_ITEM}"
+			LOG_PATH="${SOURCE_VOLUME}/logs"
+			LOG_DIR="${SOURCE_DIR}/logs"
+			DATA_PATH="${DOCKER_DIR}/build-data/${TARGET_ITEM}"
+			IMG="${HOST_USER}/${EXEC_NAME}"
+			DESCRIPTION="Containerization of ${TARGET_ITEM} compilation"
+			COMMAND="${COMMAND_PROX:-"/usr/bin/pod_start"}"
+			;;
+		*)
+			echo "ERROR - You must choose a valid build target!"
+			exit 1
+			;;
+	esac
+}
+
+volume_setup() {
+  declare -a -- VOLUMES
+
+  VOLUMES=(
+    "${SOURCE_VOLUME}" "${HOST_USER}:${HOST_USER}" "770"
+    "${DATA_PATH}" "${HOST_USER}:${HOST_USER}" "770"
+  )
+
+  while (( ${#VOLUMES[@]} > 0 )); do
+    if [ ! -d "${VOLUMES[0]}" ]; then
+      mkdir --parents -- "${VOLUMES[0]}"
+      sudo -- chown --recursive -- "${VOLUMES[1]}" "${VOLUMES[0]}"
+      sudo -- chmod --recursive -- "${VOLUMES[2]}" "${VOLUMES[0]}"
+    fi
+
+    VOLUMES=("${VOLUMES[@]:3}")
+  done
+}
+
+prep_files() {
+	mkdir --parents -- "${SOURCE_VOLUME}/"{artifacts,clone,logs} "${DATA_PATH}/scripts"
+
+	touch -- "${DATA_PATH}/"{url,branch,packages}
+	
+	[ -z "$(ls -A "${DATA_PATH}/scripts")" ] || ln -sf "${DATA_PATH}/scripts"/* "${DATA_PATH}"
+
+	printf -- "${LOG_PATH}/%s\n" "${LOG_POSTFIX[@]}" | xargs touch
+
+	if [[ ${BRANCH[@]+${#BRANCH[@]}} -gt 1 ]]; then
+		for TAG in "${BRANCH[@]}"; do
+			mkdir --parents -- "${SOURCE_VOLUME}/"{artifacts,logs}/"${TAG}"
+			printf -- "${SOURCE_VOLUME}/logs/${TAG}/%s\n" "${LOG_POSTFIX[@]}" | xargs touch
+		done
+	fi
+
+	if [ ! -f "${DATA_PATH}/pod_start" ]; then
+		echo -e "WARNING - ${DATA_PATH}/pod_start not found!\nAdding template..."
+		cp -- "${DOCKER_DIR}/help-steps/script_template" "${DATA_PATH}/pod_start"
+	fi
+}
+
+build_container_image() {
+	buildah_check_image "${IMG}" "${REBUILD_IMG:-}" || return 0
+
+	if ctr=$(buildah from --format=docker -- "${IMG_SOURCE}"); then
+		buildah \
+			config \
+				--env HOME="/home/${DOCKER_USER}" \
+				--env USER="${DOCKER_USER}" \
+				--author="${HOST_USER}" \
+				--label io.containers.maintainer="${HOST_USER}" \
+				--label io.containers.title="${EXEC_NAME}" \
+				--label io.containers.description="${DESCRIPTION}" \
+				--cmd "/bin/bash" \
+				-- \
+					"${ctr}"
+
+		buildah run -- "${ctr}" /bin/bash -c "$(cat -- "${CUSTOM_BASE:-"${DOCKER_DIR}/base.sh"}")"
+
+		buildah \
+			add \
+				--chown "${DOCKER_USER}":"${DOCKER_USER}" \
+				--chmod "770" \
+				-- \
+					"${ctr}" \
+					"${DATA_PATH}/scripts/*" \
+					"${DATA_PATH}/pod_start" \
+					"/usr/bin/"
+
+		buildah \
+			commit \
+				--format=docker \
+				--omit-history \
+				--rm \
+				-- \
+					"${ctr}" \
+					"${IMG}"
+
+	else
+		echo "ERROR - ${IMG_SOURCE} does not exist or pull failed!"
+
+		exit 1
+	fi
+}
+
+run_apt_cacher() {
+	CACHER_VOLUME=${CACHER_VOLUME:="${DOCKER_DIR}/apt-cacher/cache"}
+
+	"${DOCKER_DIR}/apt-cacher/cache.sh" \
+		"${ENGINE}" \
+		"${CACHER_VOLUME}" \
+		"${REBUILD_CACHE:-}"
+}
+
+deploy_build_container() {
+	engine_signal_container "${SIGNAL:-}" || return 0
+
+	"${ENGINE}" \
+		run \
+			--name "${EXEC_NAME}" \
+			--userns=keep-id \
+			--detach \
+			--tty \
+			--interactive \
+			--rm \
+			--env "SOURCE_DIR=${SOURCE_DIR}" \
+			--env "CLONE_DIR=${SOURCE_DIR}/clone" \
+			--env "ARTIFACT_DIR=${SOURCE_DIR}/artifacts" \
+			--env "LOG_DIR=${SOURCE_DIR}/logs" \
+			--env "CLEAN=${CLEAN:-}" \
+			--env "TARGET=${TARGET_ITEM}" \
+			--env "URL=${URL_ARG:-$(<"${DATA_PATH}/url")}" \
+			--env "BRANCH=${BRANCH[*]:-$(<"${DATA_PATH}/branch")}" \
+			--env "PACKAGES=${PACKAGES_ARG:-$(xargs<"${DATA_PATH}/packages")}" \
+			--env "LOG_POSTFIX=${LOG_POSTFIX[*]}" \
+			--env "TIMEFORMAT=Time Elapsed [ user:%3lU | system:%3lS | real:%3lE | cpu:%P%% ]" \
+			--volume "${SOURCE_VOLUME}:${SOURCE_DIR}" \
+				"${IMG}" \
+					/usr/bin/sudo \
+						--non-interactive \
+						--preserve-env \
+						-u "${DOCKER_USER}" \
+						-- \
+						  /bin/bash -c "${COMMAND};${CT_POST_ARG:-}" "${@}"
+}
+
+parse_args "$@"
+
+run_apt_cacher
+
+for TARGET_ITEM in "${TARGET[@]}"; do
+	env_setup
+	volume_setup
+	prep_files
+	build_container_image
+	deploy_build_container
+	tmux_start_session
+done
+
+tmux_attach_latest

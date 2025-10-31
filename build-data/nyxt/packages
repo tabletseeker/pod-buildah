@@ -1,0 +1,8 @@
+make
+build-essential
+libfixposix-dev
+libenchant-2-dev
+libwebkit2gtk-4.0-dev
+sbcl
+npm
+git

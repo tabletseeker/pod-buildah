@@ -1,0 +1,168 @@
+#!/bin/bash
+
+TMUX_DATA_LIST=(
+"${BUILD_SESSION_ID} ${BUILD_WINDOW_ID} ${MAX_BUILD_PANE} null 0"
+"${LOG_SESSION_ID} ${LOG_WINDOW_ID} ${MAX_LOG_PANE} 1 2"
+)
+
+tmux_create_uuid() {
+  uuidgen --random --hex -- | cut -f1 -d"-"
+}
+
+tmux_list_sessions() {
+	${TMUX_EXEC} -S ${XP_SOCKET_PATH} list-sessions -F "#{session_created} #{session_name}" 2>/dev/null | sort -n | grep -Po "${1}"
+}
+
+tmux_current_state() {
+	if ${TMUX_EXEC} list-sessions &>/dev/null; then
+		readarray -t SESSIONS <<<"$(tmux_list_sessions "${TMUX_DATA_ARRAY[0]}-[a-z0-9-]+")"
+		readarray -t PANES <<<$(${TMUX_EXEC} list-panes -a -f "#{&&:#{m/r:^(${EXEC_NAME}|$(printf -- "${EXEC_NAME}${SEPARATOR:-"-"}%s|" "${LOG_POSTFIX[@]%.log}"))$,#{pane_title}},#{==:${SESSIONS[-1]},#{session_name}}}" -F "#{pane_id}" 2>/dev/null)
+		LAST_WINDOW="$(${TMUX_EXEC} list-sessions -f "#{==:${SESSIONS[-1]},#{session_name}}" -F "#{?last_window_index,#{last_window_index},0}" 2>/dev/null)"
+		LAST_PANE="$(${TMUX_EXEC} list-windows -t "${SESSIONS[-1]}" -f "#{&&:#{==:${LAST_WINDOW},#{window_index}},#{==:${SESSIONS[-1]},#{session_name}}}" -F "#{e|-|:#{window_panes},1}" 2>/dev/null)"
+		RESET="${1:-""}"
+  fi
+}
+
+tmux_create_session() {
+	${TMUX_EXEC} new -d -s "${1}" -n "${2}" "${3}; $(tmux_exit_cmd)" \; \
+	set -g pane-border-format "#{pane_index} #{pane_title}" \; \
+	set -g pane-border-status top \; \
+	bind-key -n M-s choose-session \; \
+	bind-key -n M-d resize-pane -Z \; \
+	set-option -g prefix M-c \; \
+	bind -n M-Left select-pane -L \; \
+	bind -n M-Right select-pane -R \; \
+	bind -n M-Up select-pane -U \; \
+	bind -n M-Down select-pane -D \; \
+	set-window-option automatic-rename off \; \
+	set-option -g allow-rename off \; \
+	set-option -g remain-on-exit on \; \
+	set-option -g pane-border-format "#[bg=green,fg=black] #T #[default]" \; \
+	select-pane -T "${4}"
+	tmux_current_state "1"
+}
+
+tmux_create_window() {
+	${TMUX_EXEC} new-window -t "${1}" -n "${2}" "${3}; $(tmux_exit_cmd)" \; select-pane -T "${4}"
+  tmux_current_state "1"
+}
+
+tmux_create_command() {
+	case "${TMUX_DATA_ARRAY[@]}" in
+		*pod-buildah*)
+			PANE_TITLE="${EXEC_NAME}"
+			COLUMNS="2"
+			LAYOUT="tiled"
+			TMUX_CMD="${ENGINE} exec -it ${ctr} /bin/bash -c '${COMMAND_ARG:-"/bin/bash"}'"
+			POST_CMD="${PB_POST_ARG:-"${VIM} ${DATA_PATH}/*"}"
+			DEAD_STRING="Press [ENTER] for post or [Ctrl c] to exit"
+			;;
+		*pod-log*)
+			[ -z ${RESET} ] || set -- $(($1+1))
+			PANE_TITLE="${EXEC_NAME}${SEPARATOR:-"-"}${LOG_POSTFIX[${@}]%.log}"
+			COLUMNS="3"
+			LAYOUT="-E"
+			POST_CMD="${TMUX_EXEC} respawn-pane -k"
+			DEAD_STRING="Press [ENTER] to respawn"
+			[[ ${@} -lt 1 && -z "${BRANCH_LOG:-}" || ${BRANCH[@]+${#BRANCH[@]}} -lt 2 ]] && BRANCH_PROX=("") || BRANCH_PROX=("${BRANCH[@]:-}")
+			unset TAB_TITLES LOG_FILES
+			for ((INDEX=0;INDEX<${#BRANCH_PROX[@]};INDEX++)); do
+					TAB_TITLES[INDEX]="+\"call settabvar($((INDEX+1)), 'name', '${BRANCH_PROX[INDEX]:-default}')\""
+					LOG_FILES[INDEX]="${LOG_PATH}/${BRANCH_PROX[INDEX]:-}/${LOG_POSTFIX[${@}]}"
+			done
+			TMUX_CMD="${VIM} ${LOG_FILES[@]} +\"tabdo call TailStart()\" ${TAB_TITLES[@]}"
+			;;
+	esac
+}
+
+tmux_exit_bar() {
+	case "${1:-1}" in
+		1)
+			COLOR="41"
+			STYLE="4"
+			;;
+		0)
+			COLOR="42"
+			STYLE="6"
+			;;
+		*)
+			COLOR="47"
+			STYLE="6"
+			;;
+	esac
+	DEAD_MSG="\033[${COLOR}m\033[${STYLE}m\033[30m Exit ${1}: ${2} \033[0m\033[39m\033[49m"
+	printf '%b\n' -- "${DEAD_MSG}"
+}
+
+tmux_exit_cmd() {
+	echo "${SHELL} -c \"sleep .4; tmux_exit_bar \$? '${DEAD_STRING}'; read && ${POST_CMD} || true\""
+}
+
+tmux_create_panes() {
+  for PANE_INDEX in $(seq 0 "${1}"); do
+		tmux_create_command ${PANE_INDEX}
+		PANE_COUNT="$(${TMUX_EXEC} list-windows -t "${SESSIONS[-1]}" -f "#{&&:#{==:${LAST_WINDOW},#{window_index}},#{==:${SESSIONS[-1]},#{session_name}}}" -F "#{window_panes}" 2>/dev/null)"
+		[ $((PANE_COUNT % COLUMNS)) -eq 0 ] && SPLIT="-vf" || SPLIT="-h"
+		${TMUX_EXEC} split-window ${SPLIT} -t "${2}.$((${3}+PANE_INDEX))" "printf '\033]2;${PANE_TITLE}\033\\';${TMUX_CMD}; $(tmux_exit_cmd)" \; select-layout "${LAYOUT}"
+  done
+
+	${TMUX_EXEC} select-layout -t "${SESSIONS[-1]}:${LAST_WINDOW}" "${LAYOUT}"
+}
+
+tmux_spawn_panes() {	
+	if [[ -n "${PANES[@]}" ]]; then
+		for PANE_INDEX in "${!PANES[@]}"; do
+			tmux_create_command ${PANE_INDEX}
+			${TMUX_EXEC} respawn-pane -k -t "${PANES[PANE_INDEX]}" "${TMUX_CMD}; $(tmux_exit_cmd)"
+		done
+		tmux_current_state
+		return 1
+	fi
+}
+
+tmux_create_pod() {
+	if [[ -z "${SESSIONS[@]}" ]]; then
+		tmux_create_command
+		tmux_create_session \
+			"${1}-$(tmux_create_uuid)" \
+			"${2}-$(tmux_create_uuid)" \
+			"${TMUX_CMD}" \
+			"${PANE_TITLE}"
+	else
+		if [ $((LAST_PANE+1)) -ge ${3} ]; then
+			tmux_create_command
+			tmux_create_window \
+				"${SESSIONS[-1]}:" \
+				"${2}-$(tmux_create_uuid)" \
+				"${TMUX_CMD}" \
+				"${PANE_TITLE}"
+		fi
+	fi
+	[ -n "${RESET}" ] && set -- "${4}" || set -- "${5}"
+	[ ! "${@}" = "null" ] || return 0
+  tmux_create_panes "$@" "${SESSIONS[-1]}:${LAST_WINDOW}" "${LAST_PANE}"
+}
+
+tmux_attach_latest() {
+	if [ -n "${DETACH:-""}" ]; then
+		return 0
+	else
+		if [ -n "$(tmux list-sessions -f '#{m/r:pod-.*,#{session_name}}')" ]; then
+			[ -z "${COMMAND_ARG:=}" ] && tmux attach -t pod-log || \
+			tmux attach -t pod-buildah
+		fi
+	fi
+}
+
+tmux_start_session() {
+	if engine_check_container "${EXEC_NAME}"; then
+		if [ -n "${running}" ]; then
+			for TMUX_DATA_ROW in "${TMUX_DATA_LIST[@]}"; do
+				readarray -t -d " " TMUX_DATA_ARRAY <<<"${TMUX_DATA_ROW}"
+				tmux_current_state
+				tmux_spawn_panes || continue
+				tmux_create_pod ${TMUX_DATA_ARRAY[@]}
+			done
+		fi
+	fi
+}

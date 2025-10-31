@@ -1,0 +1,3 @@
+#!/bin/bash
+
+declare -fx tmux_exit_bar
