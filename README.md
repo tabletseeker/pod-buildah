@@ -2,8 +2,8 @@
 A simple shell script that uses buildah to create customized OCI/docker images and podman to deploy rootless containers designed to automate compilation/building of github projects, applications and kernels, including any other conainerized task or service. Pre-defined environment variables, various command options, native integration of all containers with apt-cacher-ng, live log monitoring with neovim and the use of tmux to consolidate container access, ensures maximum flexibility and efficiency during container use. 
 
 ## Roadmap
-- [ ] [Features](https://github.com/tabletseeker/pod-buildah#highlights)
 - [ ] [Sneak Peek](https://github.com/tabletseeker/pod-buildah/blob/main/README.md#preview)
+- [ ] [Features](https://github.com/tabletseeker/pod-buildah#highlights)
 - [ ] [Install Dependencies](https://github.com/tabletseeker/pod-buildah/blob/main/README.md#installation)
 - [ ] [How it works](https://github.com/tabletseeker/pod-buildah#how-it-works)
     - [ ] [Basics](https://github.com/tabletseeker/pod-buildah#mechanics)
@@ -23,26 +23,15 @@ A simple shell script that uses buildah to create customized OCI/docker images a
     - [ ] [Systemd Integration](https://github.com/tabletseeker/pod-buildah#using-services-for-automation)
     - [ ] [Apt-Cacher-Ng](https://github.com/tabletseeker/pod-buildah#caching)
 
-## Highlights
-- [x] Features
-
-* Anything about a container's image, behavior or task can be changed, automated and logged with simple arguments.
-* Change container OS (source image)
-* Change container process
-* Change mount locations
-* Update/reset container image 
-* Log monitoring/tailing with neovim
-* Full integration with tmux
-* Customize image setup
-* Native use of apt-cacher-ng
-* Custom packages
-* Custom command (separate from main process)
-* Custom post command (after conainer exit)
-* Graphical exit status indicator
-
 ## Preview
 - [x] Sneak Peek
-* In this example pod-buildah automatically creates 4 customized debian bookworm images and based on them deploys 4 rootless containers using podman which build multiple tags of ffmpeg, youtube-dl, linux_kernel and mpv, while using tmux sessions to manage and display each container's logs and behavior.
+### Example #1
+* pod-buildah deploys 2 rootless debian bookworm containers which build the nyxt browser and linux kernel. Here is a quick walkthrough of the tmux session layout, logging with neovim and separate container shells.
+
+  <img src="https://github.com/tabletseeker/pod-buildah/blob/master/help-steps/preview.gif" width="85%" height="85%">
+
+### Example #2
+* pod-buildah automatically creates 4 customized debian bookworm images and based on them deploys 4 rootless containers using podman which build multiple tags of ffmpeg, youtube-dl, linux_kernel and mpv.
 
   <img src="https://i.postimg.cc/Znw6zQXt/68747470733a2f2f692e706f7374696d672e63632f4a376b74347250432f33302e706e67.png" width="85%" height="85%">
   <img src="https://i.postimg.cc/JncJTjt7/31.png" width="85%" height="85%">
@@ -61,6 +50,25 @@ A simple shell script that uses buildah to create customized OCI/docker images a
 * Every container natively uses apt-cacher-ng (also containerized) which is attached to a third and final tmux session. It caches packages during the image creation, container setup and execution of the container process. 
 
   <img src="https://i.postimg.cc/pXZrXgM8/Screenshot-2025-10-11-16-12-06.png" width="85%" height="85%">
+
+[🔼 Back to Top](#Roadmap)
+
+## Highlights
+- [x] Features
+
+* Anything about a container's image, behavior or task can be changed, automated and logged with simple arguments.
+* Change container OS (source image)
+* Change container process
+* Change mount locations
+* Update/reset container image 
+* Log monitoring/tailing with neovim
+* Full integration with tmux
+* Customize image setup
+* Native use of apt-cacher-ng
+* Custom packages
+* Custom command (separate from main process)
+* Custom post command (after conainer exit)
+* Graphical exit status indicator
 
 [🔼 Back to Top](#Roadmap)
 
