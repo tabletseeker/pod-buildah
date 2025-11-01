@@ -26,7 +26,7 @@ A simple shell script that uses buildah to create customized OCI/docker images a
 ## Preview
 - [x] Sneak Peek
 ### Example #1
-* pod-buildah runs the same command in multiple containers or an individual command in each container separately, while the main container process runs in the background. Each command's output is displayed in a separate tmux session/pane.
+* pod-buildah runs the same command in multiple containers or an individual command in each container separately. Each command's output is displayed in a separate tmux session/pane.
 
   <img src="https://github.com/tabletseeker/pod-buildah/blob/master/help-steps/preview2.gif" width="85%" height="85%">
 
@@ -36,7 +36,7 @@ A simple shell script that uses buildah to create customized OCI/docker images a
   <img src="https://github.com/tabletseeker/pod-buildah/blob/master/help-steps/preview.gif" width="85%" height="85%">
 
 ### Example #3
-* pod-buildah automatically creates 4 customized debian bookworm images and based on them deploys 4 rootless containers using podman which build multiple tags of ffmpeg, youtube-dl, linux_kernel and mpv.
+* pod-buildah automatically creates 4 customized debian bookworm images and based on them deploys 4 rootless podman containers which build multiple tags of ffmpeg, youtube-dl, linux_kernel and mpv.
 
   <img src="https://i.postimg.cc/Znw6zQXt/68747470733a2f2f692e706f7374696d672e63632f4a376b74347250432f33302e706e67.png" width="85%" height="85%">
   <img src="https://i.postimg.cc/JncJTjt7/31.png" width="85%" height="85%">
