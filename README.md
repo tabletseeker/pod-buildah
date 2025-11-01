@@ -26,7 +26,7 @@ A simple shell script that uses buildah to create customized OCI/docker images a
 ## Preview
 - [x] Sneak Peek
 ### Example #1
-* pod-buildah runs the same command in multiple containers or an individual command in each container separately. Each command's output is displayed in a separate tmux session/pane.
+* pod-buildah runs the same custom command in multiple containers or an unique command in each container separately. The command output is displayed in a tmux session/pane dedicated to every individual container.
 
   <img src="https://github.com/tabletseeker/pod-buildah/blob/master/help-steps/preview2.gif" width="85%" height="85%">
 
@@ -74,6 +74,7 @@ A simple shell script that uses buildah to create customized OCI/docker images a
 * Custom command (separate from main process)
 * Custom post command (after conainer exit)
 * Graphical exit status indicator
+* Written in 100% Shell
 
 [🔼 Back to Top](#Roadmap)
 
@@ -359,6 +360,23 @@ A simple shell script that uses buildah to create customized OCI/docker images a
   ```sh
   ./pod-buildah -t linux_kernel -si docker.io/ubuntu:plucky -cb ~/Documents/base.sh -pc /bin/bash 
   ```
+- [x] Preview GIF 2 Commands
+
+* Running custom command `cbonsai` in container linux_kernel, nyxt ffmpeg and mpv
+  ```sh
+  ./pod-buildah -t linux_kernel,nyxt,ffmpeg,mpv -c '/usr/games/cbonsai -l'
+  ```
+* Running custom command `neofetch` in container linux_kernel, nyxt ffmpeg and mpv
+  ```sh
+  ./pod-buildah -t linux_kernel,nyxt,ffmpeg,mpv -c 'neofetch --disable cpu'
+  ```
+* Running 4 separate custom commands in containers linux_kernel, nyxt ffmpeg and mpv. (`pb` used as alias for `./pod-buildah`)
+  ```sh
+   pb -t nyxt -c 'sudo gping google.com --cmd echo -c green -n .2 -b 10' -d
+   pb -t mpv -c 'nyancat -s' -d
+   pb -t ffmpeg -c 'cmatrix' -d
+   pb -t linux_kernel -c 'sleep .2;atop -t 1 -axgm'
+  ```
   
 [🔼 Back to Top](#Roadmap)
 
@@ -422,9 +440,9 @@ By default two folders are generated upon starting a container, if not otherwise
 
 2. When a running container's target is launched again with pod-buildah, the call is simply ignored in order to preserve data and the ongoing container process. Tmux panes corresponding with this container target however are respawned, to allow quick and easy restarting of dead panes without container interference. If option `-c|--command` was used, the pod-buildah pane running this command will be respawned with the newly passed command directive, which is either custom or default (/bin/bash). The same goes for options `-tc|--tmux-command`. Option `-pc|--post-command` is ignored however, because the current container process is still running.
 
-3. Containers can run `/bin/bash` as a default post-command after the main process exits in order to prevent the container from stopping and allowing for potential troubleshooting or general access through a pod-buildah tmux pane. In order to enable this behavior uncomment `#CT_POST_ARG="/bin/bash"` in `pod-buildah/help-steps/variables`
+3. Containers exit after execution of the main process has been completed. When this happens, any command attached in the tmux session pod-buildah, be it custom or the default `/bin/bash`, will also exit. This behavior can be changed with option `-pc|--post-command`. In order to keep the container running after the main process one could for example pass `-pc /bin/bash`. This would result in both the container itself and it's corresponding pod-buildah tmux session to remain open indefinitely.
 
-4. Containers exit after execution of the main process has been completed. When this happens, any command attached in the tmux session pod-buildah, be it custom or the default `/bin/bash`, will also exit. This behavior can be changed with option `-pc|--post-command`. In order to keep the container running after the main process one could for example pass `-pc /bin/bash`. This would result in both the container itself and it's corresponding pod-buildah tmux session to remain open indefinitely.
+4. Containers can run `/bin/bash` as a default post-command after the main process exits in order to prevent the container from stopping and allowing for potential troubleshooting or general access through a pod-buildah tmux pane. In order to enable this behavior uncomment `#CT_POST_ARG="/bin/bash"` in `pod-buildah/help-steps/variables`
 
 #### Auto-Generated Files
 3. All log files, source and build folders are automatically generated. Technically, a target_name is all that's needed to run pod-buildah and start any given container.
@@ -438,6 +456,9 @@ If less than three names are given, the default remainder still applies. For exa
 
 #### Neovim
 6. `pod-buildah/hel-steps/vimrc` can be configured to change neovim's behavior as needed. By default it contains functions for tailing, renaming tab titles and color scheme adjustments.
+
+#### Tmux
+7. Only three sessions are created by default, `pod-buildah`, `pod-log` and `apt-cacher`. Each pod-buildah session can have a max of 4 panes and each pod-log session 9 panes, before a new window is created. This behavior can be changed by modifying `MAX_BUILD_PANE="4"` `MAX_LOG_PANE="12"` in `pod-buildah/help-steps/variables`. 12 log panes seem to be the sweet spot where each pane's log output is still reasonably legible.
 
 [🔼 Back to Top](#Roadmap)
 
