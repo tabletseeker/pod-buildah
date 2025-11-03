@@ -26,7 +26,7 @@ A simple shell script that uses buildah to create customized OCI/docker images a
 ## Preview
 - [x] Sneak Peek
 ### Example #1
-* pod-buildah runs the same custom command in multiple containers or an unique command in each container separately. The command output is displayed in a tmux session/pane dedicated to every individual container.
+* pod-buildah runs the same custom command in multiple containers or a unique command in each container separately. The command output is displayed in a tmux session/pane dedicated to every individual container.
 
   <img src="https://github.com/tabletseeker/pod-buildah/blob/master/help-steps/preview2.gif" width="85%" height="85%">
 
